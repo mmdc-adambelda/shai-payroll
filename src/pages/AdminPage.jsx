@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, ROLES, DEPARTMENTS, STATUS } from '../lib/supabase'
-import { format } from 'date-fns'
-import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
+import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock } from 'lucide-react'
 
+// ─── Helpers ───────────────────────────────────────────────
 function RoleBadge({ role }) {
   const map = {
     [ROLES.SUPER_ADMIN]: 'bg-brand-900/60 text-brand-300 border-brand-700/40',
-    [ROLES.MANAGER]: 'bg-purple-900/60 text-purple-300 border-purple-700/40',
-    [ROLES.STAFF]: 'bg-slate-800 text-slate-400 border-slate-700/40',
+    [ROLES.MANAGER]:     'bg-purple-900/60 text-purple-300 border-purple-700/40',
+    [ROLES.STAFF]:       'bg-slate-800 text-slate-400 border-slate-700/40',
   }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${map[role] || map[ROLES.STAFF]}`}>
@@ -19,29 +20,30 @@ function RoleBadge({ role }) {
 
 function StatusBadge({ status }) {
   const map = {
-    [STATUS.DRAFT]: <span className="badge-draft">Draft</span>,
+    [STATUS.DRAFT]:     <span className="badge-draft">Draft</span>,
     [STATUS.SUBMITTED]: <span className="badge-pending">Submitted</span>,
-    [STATUS.APPROVED]: <span className="badge-approved">Approved</span>,
-    [STATUS.REJECTED]: <span className="badge-rejected">Rejected</span>,
+    [STATUS.APPROVED]:  <span className="badge-approved">Approved</span>,
+    [STATUS.REJECTED]:  <span className="badge-rejected">Rejected</span>,
     [STATUS.PROCESSED]: <span className="badge-processed">Processed</span>,
   }
   return map[status] || <span className="badge-draft">{status}</span>
 }
 
+// ─── Employee Edit Modal ────────────────────────────────────
 function EditUserModal({ user, onClose, onSave }) {
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
-    full_name: user.full_name || '',
-    role: user.role || ROLES.STAFF,
-    department: user.department || DEPARTMENTS.ADMIN,
+    full_name:   user.full_name   || '',
+    role:        user.role        || ROLES.STAFF,
+    department:  user.department  || DEPARTMENTS.ADMIN,
     employee_id: user.employee_id || '',
-    daily_rate: user.daily_rate || '',
-    position: user.position || '',
-    phone: user.phone || '',
+    daily_rate:  user.daily_rate  || '',
+    position:    user.position    || '',
+    phone:       user.phone       || '',
   })
   const [credits, setCredits] = useState({
-    leave_sick: user.leave_sick ?? 15,
-    leave_vacation: user.leave_vacation ?? 15,
+    leave_sick:      user.leave_sick      ?? 15,
+    leave_vacation:  user.leave_vacation  ?? 15,
     leave_emergency: user.leave_emergency ?? 3,
     leave_maternity: user.leave_maternity ?? 60,
   })
@@ -54,11 +56,6 @@ function EditUserModal({ user, onClose, onSave }) {
     onClose()
   }
 
-  const tabs = [
-    { id: 'info', label: 'Info & Role' },
-    { id: 'credits', label: 'Leave Credits' },
-  ]
-
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="card w-full max-w-md p-6 animate-in">
@@ -70,18 +67,10 @@ function EditUserModal({ user, onClose, onSave }) {
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
         </div>
 
-        {/* Tab switcher */}
         <div className="flex gap-1 p-1 bg-slate-900 rounded-xl mb-5">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                tab === t.id
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-600/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
+          {[{ id: 'info', label: 'Info & Role' }, { id: 'credits', label: 'Leave Credits' }].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t.id ? 'bg-brand-600/30 text-brand-300 border border-brand-600/30' : 'text-slate-400 hover:text-slate-200'}`}>
               {t.label}
             </button>
           ))}
@@ -134,53 +123,38 @@ function EditUserModal({ user, onClose, onSave }) {
 
         {tab === 'credits' && (
           <div className="space-y-3">
-            <p className="text-xs text-slate-400 mb-1">Set the available leave credits for this employee. These represent the total days they are entitled to use.</p>
+            <p className="text-xs text-slate-400 mb-1">Set the available leave credits for this employee.</p>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label">Sick Leave (days)</label>
-                <input
-                  type="number" min="0" max="365"
-                  className="input"
-                  value={credits.leave_sick}
-                  onChange={e => setCredits({ ...credits, leave_sick: parseInt(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <label className="label">Vacation Leave (days)</label>
-                <input
-                  type="number" min="0" max="365"
-                  className="input"
-                  value={credits.leave_vacation}
-                  onChange={e => setCredits({ ...credits, leave_vacation: parseInt(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <label className="label">Emergency Leave (days)</label>
-                <input
-                  type="number" min="0" max="365"
-                  className="input"
-                  value={credits.leave_emergency}
-                  onChange={e => setCredits({ ...credits, leave_emergency: parseInt(e.target.value) || 0 })}
-                />
-              </div>
-              <div>
-                <label className="label">Maternity/Paternity (days)</label>
-                <input
-                  type="number" min="0" max="365"
-                  className="input"
-                  value={credits.leave_maternity}
-                  onChange={e => setCredits({ ...credits, leave_maternity: parseInt(e.target.value) || 0 })}
-                />
-              </div>
+              {[
+                { key: 'leave_sick',      label: 'Sick Leave' },
+                { key: 'leave_vacation',  label: 'Vacation Leave' },
+                { key: 'leave_emergency', label: 'Emergency Leave' },
+                { key: 'leave_maternity', label: 'Maternity/Paternity' },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="label">{label} (days)</label>
+                  <input type="number" min="0" max="365" className="input"
+                    value={credits[key]}
+                    onChange={e => setCredits({ ...credits, [key]: parseInt(e.target.value) || 0 })} />
+                </div>
+              ))}
             </div>
             <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40 text-xs text-slate-400 space-y-1 mt-2">
-              <div className="flex justify-between"><span>Sick Leave</span><span className="text-white font-mono">{credits.leave_sick} days</span></div>
-              <div className="flex justify-between"><span>Vacation Leave</span><span className="text-white font-mono">{credits.leave_vacation} days</span></div>
-              <div className="flex justify-between"><span>Emergency Leave</span><span className="text-white font-mono">{credits.leave_emergency} days</span></div>
-              <div className="flex justify-between"><span>Maternity/Paternity</span><span className="text-white font-mono">{credits.leave_maternity} days</span></div>
+              {[
+                { key: 'leave_sick',      label: 'Sick Leave' },
+                { key: 'leave_vacation',  label: 'Vacation Leave' },
+                { key: 'leave_emergency', label: 'Emergency Leave' },
+                { key: 'leave_maternity', label: 'Maternity/Paternity' },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex justify-between">
+                  <span>{label}</span><span className="text-white font-mono">{credits[key]} days</span>
+                </div>
+              ))}
               <div className="border-t border-slate-800/60 pt-1 flex justify-between font-medium">
                 <span className="text-slate-300">Total Credits</span>
-                <span className="text-brand-400 font-mono">{credits.leave_sick + credits.leave_vacation + credits.leave_emergency + credits.leave_maternity} days</span>
+                <span className="text-brand-400 font-mono">
+                  {credits.leave_sick + credits.leave_vacation + credits.leave_emergency + credits.leave_maternity} days
+                </span>
               </div>
             </div>
           </div>
@@ -197,16 +171,229 @@ function EditUserModal({ user, onClose, onSave }) {
   )
 }
 
+// ─── Timesheet Edit Modal ───────────────────────────────────
+function TimesheetEditModal({ timesheet, onClose, onSaved }) {
+  const [rows, setRows]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [editingRow, setEditingRow] = useState(null)
+
+  useEffect(() => { fetchAttendance() }, [])
+
+  async function fetchAttendance() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('attendance_records')
+      .select('*')
+      .eq('user_id', timesheet.user_id)
+      .gte('date', timesheet.period_start)
+      .lte('date', timesheet.period_end)
+      .order('date')
+    setRows(data || [])
+    setLoading(false)
+  }
+
+  function buildISO(dateStr, timeStr) {
+    if (!timeStr) return null
+    return `${dateStr}T${timeStr}:00+08:00`
+  }
+
+  function toTimeInput(isoStr) {
+    if (!isoStr) return ''
+    try { return format(parseISO(isoStr), 'HH:mm') } catch { return '' }
+  }
+
+  function calcHours(clockIn, clockOut) {
+    if (!clockIn || !clockOut) return 0
+    try {
+      const diff = (new Date(clockOut) - new Date(clockIn)) / 3600000
+      return Math.max(0, parseFloat(diff.toFixed(2)))
+    } catch { return 0 }
+  }
+
+  async function saveRow(row) {
+    setSaving(true)
+    const hours = calcHours(editingRow.clock_in, editingRow.clock_out)
+
+    const { error } = await supabase
+      .from('attendance_records')
+      .update({
+        clock_in:     editingRow.clock_in  || null,
+        clock_out:    editingRow.clock_out || null,
+        hours_worked: hours,
+      })
+      .eq('id', row.id)
+
+    if (!error) {
+      const updatedRows = rows.map(r =>
+        r.id === row.id
+          ? { ...r, clock_in: editingRow.clock_in, clock_out: editingRow.clock_out, hours_worked: hours }
+          : r
+      )
+      setRows(updatedRows)
+
+      const totalHours  = updatedRows.reduce((s, r) => s + (r.hours_worked || 0), 0)
+      const daysPresent = updatedRows.filter(r => r.clock_in).length
+
+      await supabase.from('timesheets').update({
+        total_hours:  parseFloat(totalHours.toFixed(2)),
+        days_present: daysPresent,
+        updated_at:   new Date().toISOString(),
+      }).eq('id', timesheet.id)
+    }
+
+    setEditingRow(null)
+    setSaving(false)
+  }
+
+  const totalHours  = rows.reduce((s, r) => s + (r.hours_worked || 0), 0)
+  const daysPresent = rows.filter(r => r.clock_in).length
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-2xl p-6 animate-in max-h-[90vh] flex flex-col">
+
+        <div className="flex items-start justify-between mb-4 flex-shrink-0">
+          <div>
+            <h3 className="font-display font-bold text-white">Edit Timesheet</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {timesheet.profiles?.full_name} · {timesheet.period_month} · {timesheet.period_cutoff === '1' ? '1st Cut-off (1–15)' : '2nd Cut-off (16–End)'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none ml-4">✕</button>
+        </div>
+
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 mb-4 flex-shrink-0">
+          <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-300 leading-relaxed">
+            Click the <strong>✏ pencil</strong> on any row to correct clock-in/clock-out times. Each save immediately updates that row and recalculates the timesheet totals. When done, close this window and click <strong>Approve</strong>.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-4 flex-shrink-0">
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40 text-center">
+            <div className="text-lg font-bold font-mono text-white">{daysPresent}</div>
+            <div className="text-xs text-slate-400">Days Present</div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40 text-center">
+            <div className="text-lg font-bold font-mono text-brand-400">{totalHours.toFixed(1)}h</div>
+            <div className="text-xs text-slate-400">Total Hours</div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40 text-center">
+            <div className="text-lg font-bold font-mono text-amber-400">
+              {Math.max(0, totalHours - daysPresent * 8).toFixed(1)}h
+            </div>
+            <div className="text-xs text-slate-400">Overtime</div>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 rounded-xl border border-slate-800/40">
+          {loading ? (
+            <div className="py-12 text-center text-slate-500">Loading attendance records...</div>
+          ) : rows.length === 0 ? (
+            <div className="py-12 text-center text-slate-500">No attendance records for this period.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-900 z-10">
+                <tr className="border-b border-slate-800/60">
+                  <th className="text-left px-4 py-3 text-slate-500 font-medium">Date</th>
+                  <th className="text-left px-4 py-3 text-slate-500 font-medium">Clock In</th>
+                  <th className="text-left px-4 py-3 text-slate-500 font-medium">Clock Out</th>
+                  <th className="text-left px-4 py-3 text-slate-500 font-medium">Regular</th>
+                  <th className="text-left px-4 py-3 text-slate-500 font-medium">OT</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => {
+                  const isEditing = editingRow?.id === r.id
+                  const regular   = Math.min(r.hours_worked || 0, 8)
+                  const ot        = Math.max(0, (r.hours_worked || 0) - 8)
+
+                  return (
+                    <tr key={r.id} className={`border-b border-slate-800/40 transition-colors ${isEditing ? 'bg-brand-900/10' : 'hover:bg-slate-800/20'}`}>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-300 whitespace-nowrap">
+                        {format(new Date(r.date + 'T00:00:00'), 'EEE, MMM d')}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="time" className="input py-1 px-2 text-xs w-28"
+                            value={toTimeInput(editingRow.clock_in)}
+                            onChange={e => setEditingRow({ ...editingRow, clock_in: buildISO(r.date, e.target.value) })} />
+                        ) : (
+                          <span className="font-mono text-slate-300">
+                            {r.clock_in ? format(parseISO(r.clock_in), 'HH:mm') : <span className="text-slate-600">—</span>}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <input type="time" className="input py-1 px-2 text-xs w-28"
+                            value={toTimeInput(editingRow.clock_out)}
+                            onChange={e => setEditingRow({ ...editingRow, clock_out: buildISO(r.date, e.target.value) })} />
+                        ) : (
+                          <span className="font-mono text-slate-300">
+                            {r.clock_out ? format(parseISO(r.clock_out), 'HH:mm') : <span className="text-slate-600">—</span>}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 font-mono text-emerald-400 text-xs">{regular.toFixed(1)}h</td>
+                      <td className="px-4 py-3 font-mono text-amber-400 text-xs">{ot > 0 ? `+${ot.toFixed(1)}h` : '—'}</td>
+
+                      <td className="px-4 py-3">
+                        {isEditing ? (
+                          <div className="flex gap-1.5">
+                            <button onClick={() => saveRow(r)} disabled={saving}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-700/30 text-emerald-400 hover:bg-emerald-700/50 text-xs font-medium border border-emerald-700/40 transition-all disabled:opacity-50">
+                              <Save className="w-3 h-3" /> {saving ? '...' : 'Save'}
+                            </button>
+                            <button onClick={() => setEditingRow(null)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 text-xs font-medium border border-slate-700/40 transition-all">
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingRow({ id: r.id, clock_in: r.clock_in, clock_out: r.clock_out })}
+                            className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-brand-400 transition-all"
+                            title="Edit this row">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 mt-4 flex-shrink-0">
+          <button onClick={() => { onSaved(); onClose() }} className="btn-secondary">
+            Done — Back to Approvals
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main AdminPage ─────────────────────────────────────────
 export default function AdminPage() {
   const { profile } = useAuth()
-  const [activeTab, setActiveTab] = useState('employees')
-  const [employees, setEmployees] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [editUser, setEditUser] = useState(null)
-  const [stats, setStats] = useState({})
+  const [activeTab, setActiveTab]         = useState('employees')
+  const [employees, setEmployees]         = useState([])
+  const [loading, setLoading]             = useState(true)
+  const [editUser, setEditUser]           = useState(null)
+  const [editTimesheet, setEditTimesheet] = useState(null)
+  const [stats, setStats]                 = useState({})
   const [pendingTimesheets, setPendingTimesheets] = useState([])
-  const [tsLoading, setTsLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [tsLoading, setTsLoading]         = useState(false)
+  const [searchQuery, setSearchQuery]     = useState('')
 
   useEffect(() => {
     fetchEmployees()
@@ -230,10 +417,10 @@ export default function AdminPage() {
       supabase.from('timesheets').select('id', { count: 'exact' }).eq('status', 'submitted'),
     ])
     setStats({
-      presentToday: present.count || 0,
-      pendingLeaves: leaves.count || 0,
-      pendingOT: ot.count || 0,
-      pendingTimesheets: timesheets.count || 0,
+      presentToday:       present.count    || 0,
+      pendingLeaves:      leaves.count     || 0,
+      pendingOT:          ot.count         || 0,
+      pendingTimesheets:  timesheets.count || 0,
     })
   }
 
@@ -256,7 +443,7 @@ export default function AdminPage() {
 
   async function handleApproveTimesheet(id) {
     await supabase.from('timesheets').update({
-      status: STATUS.APPROVED,
+      status:      STATUS.APPROVED,
       approved_by: profile.id,
       approved_at: new Date().toISOString(),
     }).eq('id', id)
@@ -268,7 +455,7 @@ export default function AdminPage() {
     const reason = prompt('Reason for rejection:')
     if (!reason) return
     await supabase.from('timesheets').update({
-      status: STATUS.REJECTED,
+      status:           STATUS.REJECTED,
       rejection_reason: reason,
     }).eq('id', id)
     fetchPendingTimesheets()
@@ -289,7 +476,7 @@ export default function AdminPage() {
   }, {})
 
   const mainTabs = [
-    { id: 'employees', label: 'Employees', icon: Users, count: employees.length },
+    { id: 'employees',  label: 'Employees',           icon: Users,    count: employees.length },
     { id: 'timesheets', label: 'Timesheet Approvals', icon: FileText, count: stats.pendingTimesheets },
   ]
 
@@ -302,42 +489,32 @@ export default function AdminPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold font-mono text-white">{employees.length}</div>
-          <div className="text-xs text-slate-400 mt-1">Total Employees</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold font-mono text-emerald-400">{stats.presentToday}</div>
-          <div className="text-xs text-slate-400 mt-1">Present Today</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold font-mono text-amber-400">{stats.pendingLeaves}</div>
-          <div className="text-xs text-slate-400 mt-1">Pending Leaves</div>
-        </div>
-        <div className="card p-4 text-center">
-          <div className="text-2xl font-bold font-mono text-purple-400">{stats.pendingTimesheets}</div>
-          <div className="text-xs text-slate-400 mt-1">Pending Timesheets</div>
-        </div>
+        {[
+          { value: employees.length,        label: 'Total Employees',    color: 'text-white' },
+          { value: stats.presentToday,      label: 'Present Today',      color: 'text-emerald-400' },
+          { value: stats.pendingLeaves,     label: 'Pending Leaves',     color: 'text-amber-400' },
+          { value: stats.pendingTimesheets, label: 'Pending Timesheets', color: 'text-purple-400' },
+        ].map(s => (
+          <div key={s.label} className="card p-4 text-center">
+            <div className={`text-2xl font-bold font-mono ${s.color}`}>{s.value}</div>
+            <div className="text-xs text-slate-400 mt-1">{s.label}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Main tab bar */}
+      {/* Tab bar */}
       <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800/40 w-fit">
         {mainTabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               activeTab === t.id
                 ? 'bg-brand-600/20 text-brand-300 border border-brand-600/30'
                 : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
+            }`}>
             <t.icon className="w-4 h-4" />
             {t.label}
             {t.count > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${
-                activeTab === t.id ? 'bg-brand-600/30 text-brand-300' : 'bg-slate-800 text-slate-400'
-              }`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${activeTab === t.id ? 'bg-brand-600/30 text-brand-300' : 'bg-slate-800 text-slate-400'}`}>
                 {t.count}
               </span>
             )}
@@ -348,14 +525,9 @@ export default function AdminPage() {
       {/* ── EMPLOYEES TAB ── */}
       {activeTab === 'employees' && (
         <>
-          {/* Search */}
           <div className="flex items-center gap-3">
-            <input
-              className="input max-w-xs text-sm"
-              placeholder="Search by name, ID, or position..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
+            <input className="input max-w-xs text-sm" placeholder="Search by name, ID, or position..."
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
             <button onClick={fetchEmployees} className="btn-secondary flex items-center gap-2 text-sm">
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
             </button>
@@ -394,11 +566,9 @@ export default function AdminPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <RoleBadge role={emp.role} />
-                          <button
-                            onClick={() => setEditUser(emp)}
+                          <button onClick={() => setEditUser(emp)}
                             className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-all"
-                            title="Edit employee"
-                          >
+                            title="Edit employee">
                             <Settings className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -410,21 +580,15 @@ export default function AdminPage() {
             ))
           )}
 
-          {/* Leave credits reference */}
           <div className="card p-5 border-emerald-800/30 bg-emerald-900/10">
             <h3 className="font-display font-bold text-white mb-2 flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-emerald-400" /> Leave Credit Defaults
             </h3>
             <p className="text-slate-400 text-sm leading-relaxed mb-3">
-              New employees are given these default leave credits. Click the <strong className="text-white">⚙ Edit</strong> button on any employee to adjust their individual credits under the <strong className="text-white">Leave Credits</strong> tab.
+              New employees get these default credits. Click ⚙ Edit on any employee → Leave Credits tab to adjust individually.
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              {[
-                { label: 'Sick Leave', days: 15 },
-                { label: 'Vacation Leave', days: 15 },
-                { label: 'Emergency Leave', days: 3 },
-                { label: 'Maternity/Paternity', days: 60 },
-              ].map(c => (
+              {[{ label: 'Sick Leave', days: 15 }, { label: 'Vacation Leave', days: 15 }, { label: 'Emergency Leave', days: 3 }, { label: 'Maternity/Paternity', days: 60 }].map(c => (
                 <div key={c.label} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40">
                   <div className="text-emerald-400 font-mono font-bold text-base">{c.days}</div>
                   <div className="text-slate-400 mt-0.5">{c.label}</div>
@@ -433,13 +597,12 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Adding users note */}
           <div className="card p-5 border-brand-800/30 bg-brand-900/10">
             <h3 className="font-display font-bold text-white mb-2 flex items-center gap-2">
               <span className="text-brand-400">ℹ</span> Adding New Users
             </h3>
             <p className="text-slate-400 text-sm leading-relaxed">
-              To add new employees, create accounts in your <strong className="text-white">Supabase Authentication dashboard</strong> (Authentication → Users → Add User). After creating, use the Edit button above to assign their role, department, daily rate, and leave credits.
+              Create accounts in <strong className="text-white">Supabase Authentication</strong> (Authentication → Users → Add User), then use the Edit button above to assign role, department, daily rate, and leave credits.
             </p>
           </div>
         </>
@@ -484,27 +647,30 @@ export default function AdminPage() {
                         {ts.profiles?.department}
                         {ts.profiles?.employee_id && <span className="ml-1">· {ts.profiles.employee_id}</span>}
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5 font-mono flex items-center gap-2">
+                      <div className="text-xs text-slate-500 mt-0.5 font-mono flex items-center gap-2 flex-wrap">
                         <span>{ts.period_month} · {ts.period_cutoff === '1' ? '1st Cut-off (1–15)' : '2nd Cut-off (16–End)'}</span>
                         <span>·</span>
-                        <span className="text-emerald-400">{ts.days_present} days present</span>
+                        <span className="text-emerald-400">{ts.days_present} days</span>
                         <span>·</span>
-                        <span className="text-brand-400">{ts.total_hours}h total</span>
+                        <span className="text-brand-400">{ts.total_hours}h</span>
                       </div>
                       <div className="mt-1"><StatusBadge status={ts.status} /></div>
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
+
+                  <div className="flex gap-2 flex-shrink-0 flex-wrap">
                     <button
-                      onClick={() => handleApproveTimesheet(ts.id)}
-                      className="btn-success text-xs flex items-center gap-1.5"
-                    >
+                      onClick={() => setEditTimesheet(ts)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-brand-300 text-xs font-medium border border-slate-700/40 transition-all"
+                      title="Edit attendance records before approving">
+                      <Pencil className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button onClick={() => handleApproveTimesheet(ts.id)}
+                      className="btn-success text-xs flex items-center gap-1.5">
                       <CheckCircle className="w-3.5 h-3.5" /> Approve
                     </button>
-                    <button
-                      onClick={() => handleRejectTimesheet(ts.id)}
-                      className="btn-danger text-xs flex items-center gap-1.5"
-                    >
+                    <button onClick={() => handleRejectTimesheet(ts.id)}
+                      className="btn-danger text-xs flex items-center gap-1.5">
                       <XCircle className="w-3.5 h-3.5" /> Reject
                     </button>
                   </div>
@@ -516,10 +682,13 @@ export default function AdminPage() {
       )}
 
       {editUser && (
-        <EditUserModal
-          user={editUser}
-          onClose={() => setEditUser(null)}
-          onSave={saveEmployee}
+        <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={saveEmployee} />
+      )}
+      {editTimesheet && (
+        <TimesheetEditModal
+          timesheet={editTimesheet}
+          onClose={() => setEditTimesheet(null)}
+          onSaved={fetchPendingTimesheets}
         />
       )}
     </div>
