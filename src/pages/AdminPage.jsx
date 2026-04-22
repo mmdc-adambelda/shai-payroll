@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, ROLES, DEPARTMENTS, STATUS } from '../lib/supabase'
 import { format, parseISO } from 'date-fns'
-import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock } from 'lucide-react'
+import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock, Trash2, AlertTriangle } from 'lucide-react'
 
 // ─── Helpers ───────────────────────────────────────────────
 function RoleBadge({ role }) {
@@ -391,7 +391,9 @@ export default function AdminPage() {
   const [employees, setEmployees]         = useState([])
   const [loading, setLoading]             = useState(true)
   const [editUser, setEditUser]           = useState(null)
-  const [editTimesheet, setEditTimesheet] = useState(null)
+  const [editTimesheet, setEditTimesheet]   = useState(null)
+  const [deleteTarget, setDeleteTarget]     = useState(null)
+  const [deleting, setDeleting]             = useState(false)
   const [stats, setStats]                 = useState({})
   const [pendingTimesheets, setPendingTimesheets] = useState([])
   const [tsLoading, setTsLoading]         = useState(false)
@@ -460,6 +462,16 @@ export default function AdminPage() {
       status:           STATUS.REJECTED,
       rejection_reason: reason,
     }).eq('id', id)
+    fetchPendingTimesheets()
+    fetchStats()
+  }
+
+  async function confirmDeleteTimesheet() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    await supabase.from('timesheets').delete().eq('id', deleteTarget.id)
+    setDeleting(false)
+    setDeleteTarget(null)
     fetchPendingTimesheets()
     fetchStats()
   }
@@ -675,6 +687,15 @@ export default function AdminPage() {
                       className="btn-danger text-xs flex items-center gap-1.5">
                       <XCircle className="w-3.5 h-3.5" /> Reject
                     </button>
+                    <button
+                      onClick={() => setDeleteTarget({
+                        id: ts.id,
+                        label: `${ts.profiles?.full_name} — ${ts.period_month} ${ts.period_cutoff === '1' ? '1st Cut-off' : '2nd Cut-off'}`,
+                      })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-900/20 hover:bg-red-900/30 text-red-400 hover:text-red-300 border border-red-800/30 text-xs font-medium transition-all"
+                      title="Delete this submission">
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
                   </div>
                 </div>
               ))}
@@ -692,6 +713,39 @@ export default function AdminPage() {
           onClose={() => setEditTimesheet(null)}
           onSaved={fetchPendingTimesheets}
         />
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="card w-full max-w-sm p-6 animate-in">
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-red-900/30 border border-red-800/40 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-white">Delete Submission?</h3>
+                <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+                  Permanently delete the submitted timesheet for <span className="text-white font-medium">{deleteTarget.label}</span>.
+                  Attendance records are kept — the employee can re-submit after corrections.
+                </p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 text-xs text-amber-300 mb-5">
+              ⚠ Only submitted timesheets can be deleted. Approved or processed timesheets cannot be removed.
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} className="btn-secondary flex-1">Cancel</button>
+              <button
+                onClick={confirmDeleteTimesheet}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-red-600/30 text-sm font-medium transition-all disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete It'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
