@@ -206,8 +206,10 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
   function calcHours(clockIn, clockOut) {
     if (!clockIn || !clockOut) return 0
     try {
-      const diff = (new Date(clockOut) - new Date(clockIn)) / 3600000
-      return Math.max(0, parseFloat(diff.toFixed(2)))
+      const rawHours = (new Date(clockOut) - new Date(clockIn)) / 3600000
+      // Deduct 1 hour unpaid lunch break for shifts of 5 hours or more
+      const hours = rawHours >= 5 ? rawHours - 1 : rawHours
+      return Math.max(0, parseFloat(hours.toFixed(2)))
     } catch { return 0 }
   }
 

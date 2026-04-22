@@ -67,7 +67,9 @@ function ClockWidget({ profile }) {
     setLoading(true)
     const now = new Date()
     const clockIn = new Date(todayRecord.clock_in)
-    const hours = (now - clockIn) / 3600000
+    const rawHours = (now - clockIn) / 3600000
+    // Deduct 1 hr unpaid lunch break for shifts >= 5 hours
+    const hours = rawHours >= 5 ? rawHours - 1 : rawHours
     const { error } = await supabase
       .from('attendance_records')
       .update({ clock_out: now.toISOString(), hours_worked: parseFloat(hours.toFixed(2)) })
