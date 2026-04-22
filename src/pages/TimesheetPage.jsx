@@ -1,20 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, ROLES, STATUS } from '../lib/supabase'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns'
-import { FileText, Send, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { format, endOfMonth, parseISO } from 'date-fns'
+import { FileText, Send, CheckCircle, XCircle, Trash2, AlertTriangle } from 'lucide-react'
 
 function CutoffSelector({ value, onChange }) {
   const now = new Date()
   const months = []
   for (let i = 0; i < 3; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    months.push({
-      value: format(d, 'yyyy-MM'),
-      label: format(d, 'MMMM yyyy'),
-    })
+    months.push({ value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy') })
   }
-
   return (
     <div className="flex gap-3">
       <select className="input py-2 text-sm w-auto" value={value.month} onChange={e => onChange({ ...value, month: e.target.value })}>
@@ -30,22 +26,60 @@ function CutoffSelector({ value, onChange }) {
 
 function StatusBadge({ status }) {
   const map = {
-    [STATUS.DRAFT]: <span className="badge-draft">Draft</span>,
+    [STATUS.DRAFT]:     <span className="badge-draft">Draft</span>,
     [STATUS.SUBMITTED]: <span className="badge-pending">Submitted</span>,
-    [STATUS.APPROVED]: <span className="badge-approved">Approved</span>,
-    [STATUS.REJECTED]: <span className="badge-rejected">Rejected</span>,
+    [STATUS.APPROVED]:  <span className="badge-approved">Approved</span>,
+    [STATUS.REJECTED]:  <span className="badge-rejected">Rejected</span>,
     [STATUS.PROCESSED]: <span className="badge-processed">Processed</span>,
   }
   return map[status] || <span className="badge-draft">{status}</span>
 }
 
+// ── Confirm Delete Modal ────────────────────────────────────
+function DeleteConfirmModal({ label, onConfirm, onCancel, loading }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-sm p-6 animate-in">
+        <div className="flex items-start gap-4 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-red-900/30 border border-red-800/40 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+          </div>
+          <div>
+            <h3 className="font-display font-bold text-white">Delete Submission?</h3>
+            <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+              This will permanently delete the submitted timesheet for <span className="text-white font-medium">{label}</span>.
+              The attendance records are kept — you can re-submit after making corrections.
+            </p>
+          </div>
+        </div>
+        <div className="p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 text-xs text-amber-300 mb-5">
+          ⚠ Only submitted timesheets can be deleted. Approved or processed timesheets cannot be removed.
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="btn-secondary flex-1">Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 px-4 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-red-600/30 text-sm font-medium transition-all disabled:opacity-50"
+          >
+            {loading ? 'Deleting...' : 'Yes, Delete It'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ───────────────────────────────────────────────
 export default function TimesheetPage() {
   const { profile } = useAuth()
-  const [period, setPeriod] = useState({ month: format(new Date(), 'yyyy-MM'), cutoff: new Date().getDate() <= 15 ? '1' : '2' })
-  const [attendance, setAttendance] = useState([])
-  const [timesheet, setTimesheet] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [period, setPeriod]           = useState({ month: format(new Date(), 'yyyy-MM'), cutoff: new Date().getDate() <= 15 ? '1' : '2' })
+  const [attendance, setAttendance]   = useState([])
+  const [timesheet, setTimesheet]     = useState(null)
+  const [loading, setLoading]         = useState(false)
   const [allTimesheets, setAllTimesheets] = useState([])
+  const [deleteTarget, setDeleteTarget]  = useState(null) // { id, label }
+  const [deleting, setDeleting]          = useState(false)
   const isManager = [ROLES.SUPER_ADMIN, ROLES.MANAGER].includes(profile?.role)
 
   useEffect(() => {
@@ -69,7 +103,6 @@ export default function TimesheetPage() {
   async function fetchTimesheetPeriod() {
     setLoading(true)
     const { start, end } = getPeriodDates()
-
     const [attResp, tsResp] = await Promise.all([
       supabase.from('attendance_records')
         .select('*')
@@ -84,7 +117,6 @@ export default function TimesheetPage() {
         .eq('period_cutoff', period.cutoff)
         .single(),
     ])
-
     setAttendance(attResp.data || [])
     setTimesheet(tsResp.data || null)
     setLoading(false)
@@ -102,29 +134,45 @@ export default function TimesheetPage() {
   async function submitTimesheet() {
     setLoading(true)
     const { start, end } = getPeriodDates()
-    const totalHours = attendance.reduce((s, r) => s + (r.hours_worked || 0), 0)
+    const totalHours  = attendance.reduce((s, r) => s + (r.hours_worked || 0), 0)
     const daysPresent = attendance.filter(r => r.clock_in).length
 
     if (timesheet) {
       await supabase.from('timesheets').update({ status: STATUS.SUBMITTED }).eq('id', timesheet.id)
     } else {
       await supabase.from('timesheets').insert({
-        user_id: profile.id,
-        period_month: period.month,
+        user_id:       profile.id,
+        period_month:  period.month,
         period_cutoff: period.cutoff,
-        period_start: start,
-        period_end: end,
-        total_hours: parseFloat(totalHours.toFixed(2)),
-        days_present: daysPresent,
-        status: STATUS.SUBMITTED,
+        period_start:  start,
+        period_end:    end,
+        total_hours:   parseFloat(totalHours.toFixed(2)),
+        days_present:  daysPresent,
+        status:        STATUS.SUBMITTED,
       })
     }
     fetchTimesheetPeriod()
     setLoading(false)
   }
 
+  // Delete a timesheet — only allowed when status = submitted
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    await supabase.from('timesheets').delete().eq('id', deleteTarget.id)
+    setDeleting(false)
+    setDeleteTarget(null)
+    // Refresh both views
+    fetchTimesheetPeriod()
+    if (isManager) fetchAllPending()
+  }
+
   async function handleApprove(id) {
-    await supabase.from('timesheets').update({ status: STATUS.APPROVED, approved_by: profile.id, approved_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('timesheets').update({
+      status:      STATUS.APPROVED,
+      approved_by: profile.id,
+      approved_at: new Date().toISOString(),
+    }).eq('id', id)
     fetchAllPending()
   }
 
@@ -136,7 +184,9 @@ export default function TimesheetPage() {
   }
 
   const totalHours = attendance.reduce((s, r) => s + (r.hours_worked || 0), 0)
-  const canSubmit = timesheet?.status !== STATUS.SUBMITTED && timesheet?.status !== STATUS.APPROVED && timesheet?.status !== STATUS.PROCESSED
+  const canSubmit  = timesheet?.status !== STATUS.SUBMITTED && timesheet?.status !== STATUS.APPROVED && timesheet?.status !== STATUS.PROCESSED
+  // Own submitted timesheet can be deleted (not approved/processed)
+  const canDeleteOwn = timesheet?.status === STATUS.SUBMITTED
 
   return (
     <div className="space-y-6 animate-in">
@@ -170,15 +220,42 @@ export default function TimesheetPage() {
 
       {/* Daily breakdown */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-800/60 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-slate-800/60 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="font-display font-bold text-white">Daily Breakdown</h3>
-          {(!timesheet || canSubmit) && attendance.length > 0 && (
-            <button onClick={submitTimesheet} disabled={loading} className="btn-primary text-sm flex items-center gap-2">
-              <Send className="w-3.5 h-3.5" />
-              {loading ? 'Submitting...' : 'Submit Timesheet'}
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Delete submission button — only shows when own timesheet is submitted */}
+            {canDeleteOwn && (
+              <button
+                onClick={() => setDeleteTarget({
+                  id:    timesheet.id,
+                  label: `${period.month} ${period.cutoff === '1' ? '1st Cut-off' : '2nd Cut-off'}`,
+                })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-900/20 hover:bg-red-900/30 text-red-400 hover:text-red-300 border border-red-800/30 text-sm font-medium transition-all"
+                title="Delete this submission so you can re-submit after corrections"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete Submission
+              </button>
+            )}
+            {(!timesheet || canSubmit) && attendance.length > 0 && (
+              <button onClick={submitTimesheet} disabled={loading} className="btn-primary text-sm flex items-center gap-2">
+                <Send className="w-3.5 h-3.5" />
+                {loading ? 'Submitting...' : 'Submit Timesheet'}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Submitted notice */}
+        {timesheet?.status === STATUS.SUBMITTED && (
+          <div className="px-5 py-3 bg-amber-900/10 border-b border-amber-800/20 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <p className="text-xs text-amber-300">
+              This timesheet has been submitted and is awaiting approval. If you need to make corrections,
+              click <strong>Delete Submission</strong> to withdraw it, fix your attendance records, then re-submit.
+            </p>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -199,7 +276,7 @@ export default function TimesheetPage() {
               ) : (
                 attendance.map(r => {
                   const regular = Math.min(r.hours_worked || 0, 8)
-                  const ot = Math.max(0, (r.hours_worked || 0) - 8)
+                  const ot      = Math.max(0, (r.hours_worked || 0) - 8)
                   return (
                     <tr key={r.id} className="border-b border-slate-800/40 hover:bg-slate-800/20">
                       <td className="px-5 py-3 font-mono text-xs text-slate-300">
@@ -239,18 +316,39 @@ export default function TimesheetPage() {
                   <div className="text-xs text-slate-400">{ts.profiles?.department} · {ts.period_month} {ts.period_cutoff === '1' ? '1st Cut-off' : '2nd Cut-off'}</div>
                   <div className="text-xs text-slate-500 mt-0.5 font-mono">{ts.days_present} days · {ts.total_hours}h total</div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button onClick={() => handleApprove(ts.id)} className="btn-success text-xs flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5" /> Approve
                   </button>
                   <button onClick={() => handleReject(ts.id)} className="btn-danger text-xs flex items-center gap-1.5">
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>
+                  {/* Manager/Admin can also delete a submitted timesheet */}
+                  <button
+                    onClick={() => setDeleteTarget({
+                      id:    ts.id,
+                      label: `${ts.profiles?.full_name} — ${ts.period_month} ${ts.period_cutoff === '1' ? '1st Cut-off' : '2nd Cut-off'}`,
+                    })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-900/20 hover:bg-red-900/30 text-red-400 hover:text-red-300 border border-red-800/30 text-xs font-medium transition-all"
+                    title="Delete this submission"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          label={deleteTarget.label}
+          loading={deleting}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   )
