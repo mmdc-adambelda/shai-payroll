@@ -428,7 +428,7 @@ export default function AttendancePage() {
                     <td className="px-5 py-3"><StatusBadge record={r} /></td>
                     <td className="px-5 py-3">
                       {canEditRecord(r) && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1">
                           <button
                             onClick={() => { setLogForUser(null); setEditRecord(r); setShowModal(true) }}
                             className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-brand-400 transition-all"

@@ -189,7 +189,7 @@ function DailyBreakdown({ userId, period, timesheetId, isManager, onTimesheetUpd
               const regular   = Math.min(r.hours_worked || 0, 8)
               const ot        = Math.max(0, (r.hours_worked || 0) - 8)
               return (
-                <tr key={r.id} className={`border-b border-slate-800/30 ${isEditing ? 'bg-brand-900/10' : 'hover:bg-slate-800/20'} transition-colors`}>
+                <tr key={r.id} className={`border-b border-slate-800/30 group ${isEditing ? 'bg-brand-900/10' : 'hover:bg-slate-800/20'} transition-colors`}>
                   <td className="px-5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
                     {format(new Date(r.date + 'T00:00:00'), 'EEE, MMM d')}
                   </td>
@@ -229,7 +229,7 @@ function DailyBreakdown({ userId, period, timesheetId, isManager, onTimesheetUpd
                       ) : (
                         <button
                           onClick={() => setEditingRow({ id: r.id, clock_in: r.clock_in, clock_out: r.clock_out })}
-                          className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-brand-400 transition-all opacity-0 group-hover:opacity-100"
+                          className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-brand-400 transition-all"
                           title="Edit this row"
                         >
                           <Pencil className="w-3 h-3" />
