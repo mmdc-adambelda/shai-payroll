@@ -1,8 +1,10 @@
+import React from 'react'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase, ROLES, DEPARTMENTS, STATUS } from '../lib/supabase'
 import { format, parseISO } from 'date-fns'
-import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock, Trash2, AlertTriangle } from 'lucide-react'
+import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock, Trash2, AlertTriangle, Scan, Shield } from 'lucide-react'
+import FaceEnrollment from '../components/face/FaceEnrollment'
 
 // ─── Helpers ───────────────────────────────────────────────
 function RoleBadge({ role }) {
@@ -385,6 +387,73 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
 }
 
 // ─── Main AdminPage ─────────────────────────────────────────
+
+// ── Face Enrollment Table ────────────────────────────────────
+function FaceEnrollmentTable({ employees, onEnroll }) {
+  const [enrollments, setEnrollments] = React.useState({})
+
+  React.useEffect(() => {
+    async function fetchEnrollments() {
+      const { createClient } = await import('@supabase/supabase-js')
+      const { supabase } = await import('../lib/supabase')
+      const { data } = await supabase
+        .from('face_enrollments')
+        .select('user_id, enrolled_at, sample_count')
+      if (data) {
+        const map = {}
+        data.forEach(e => { map[e.user_id] = e })
+        setEnrollments(map)
+      }
+    }
+    fetchEnrollments()
+  }, [])
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-800/60">
+        <h3 className="font-display font-bold text-white">Employee Biometric Status</h3>
+      </div>
+      <div className="divide-y divide-slate-800/60">
+        {employees.map(emp => {
+          const enrolled = enrollments[emp.id]
+          return (
+            <div key={emp.id} className="px-5 py-3.5 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  {emp.full_name?.charAt(0) || '?'}
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-white">{emp.full_name}</div>
+                  <div className="text-xs text-slate-500">{emp.department} · {emp.employee_id || 'No ID'}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {enrolled ? (
+                  <div className="text-right">
+                    <span className="badge-approved text-xs">✓ Enrolled</span>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {enrolled.sample_count} angles · {new Date(enrolled.enrolled_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="badge-draft text-xs">Not enrolled</span>
+                )}
+                <button
+                  onClick={() => onEnroll(emp)}
+                  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5"
+                >
+                  <Scan className="w-3 h-3" />
+                  {enrolled ? 'Re-enroll' : 'Enroll Face'}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const { profile } = useAuth()
   const [activeTab, setActiveTab]         = useState('employees')
@@ -398,6 +467,7 @@ export default function AdminPage() {
   const [pendingTimesheets, setPendingTimesheets] = useState([])
   const [tsLoading, setTsLoading]         = useState(false)
   const [searchQuery, setSearchQuery]     = useState('')
+  const [enrollTarget, setEnrollTarget]   = useState(null)
 
   useEffect(() => {
     fetchEmployees()
@@ -492,6 +562,7 @@ export default function AdminPage() {
   const mainTabs = [
     { id: 'employees',  label: 'Employees',           icon: Users,    count: employees.length },
     { id: 'timesheets', label: 'Timesheet Approvals', icon: FileText, count: stats.pendingTimesheets },
+    { id: 'biometrics', label: 'Face Enrollment',       icon: Scan,     count: 0 },
   ]
 
   return (
@@ -704,6 +775,44 @@ export default function AdminPage() {
         </div>
       )}
 
+
+      {/* ── BIOMETRICS / FACE ENROLLMENT TAB ── */}
+      {activeTab === 'biometrics' && (
+        <div className="space-y-4">
+          <div className="card p-5 border-brand-800/30 bg-brand-900/10">
+            <div className="flex items-center gap-3 mb-2">
+              <Shield className="w-5 h-5 text-brand-400" />
+              <h3 className="font-display font-bold text-white">Face Recognition Enrollment</h3>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Enroll each employee's face so they can use Face ID to clock in/out and log in.
+              Select an employee below and click <strong className="text-white">Enroll Face</strong> — the process captures 3 angles and takes about 30 seconds.
+            </p>
+          </div>
+
+          <FaceEnrollmentTable employees={employees} onEnroll={setEnrollTarget} />
+        </div>
+      )}
+
+
+      {enrollTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="card w-full max-w-md p-6 animate-in">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-display font-bold text-white">Enroll Face</h3>
+                <p className="text-slate-400 text-sm">{enrollTarget.full_name}</p>
+              </div>
+              <button onClick={() => setEnrollTarget(null)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <FaceEnrollment
+              userId={enrollTarget.id}
+              onDone={() => setEnrollTarget(null)}
+              onCancel={() => setEnrollTarget(null)}
+            />
+          </div>
+        </div>
+      )}
       {editUser && (
         <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={saveEmployee} />
       )}
