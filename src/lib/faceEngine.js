@@ -109,7 +109,7 @@ export function findBestMatch(descriptor, labeledDescriptors) {
 
   return {
     ...best,
-    matched: best.distance < MATCH_THRESHOLD,
+    matched: best.distance < MATCH_THRESHOLD_LOOSE,
   }
 }
 
