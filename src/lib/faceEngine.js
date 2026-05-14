@@ -84,8 +84,8 @@ export function compareDescriptors(desc1, desc2) {
   return faceapi.euclideanDistance(d1, d2)
 }
 
-export const MATCH_THRESHOLD = 0.45  // strict for attendance (production)
-export const MATCH_THRESHOLD_LOOSE = 0.52  // for login with face
+export const MATCH_THRESHOLD = 0.38  // strict for attendance
+export const MATCH_THRESHOLD_LOOSE = 0.38  // strict for login too
 
 /**
  * Find best match from a list of labeled descriptors.
