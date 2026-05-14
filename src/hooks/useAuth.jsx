@@ -3,8 +3,6 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext({})
 
-const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL || ''
-
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
@@ -36,7 +34,6 @@ export function AuthProvider({ children }) {
   }
 
   // ── Username login ────────────────────────────────────────
-  // Looks up auth_email by username, then signs in normally
   async function signInWithUsername(username, password) {
     const { data: p, error } = await supabase
       .from('profiles')
@@ -48,40 +45,27 @@ export function AuthProvider({ children }) {
   }
 
   // ── Face login ────────────────────────────────────────────
-  // 1. Get a short-lived token from Supabase RPC
-  // 2. Exchange it for a real session via Edge Function
+  // Looks up the stored login_token from face_enrollments and signs in directly
   async function signInWithFaceToken(userId) {
-    // Step 1 — request token (RPC)
-    const { data: tokenData, error: tokenErr } = await supabase
-      .rpc('request_face_login_token', { p_user_id: userId })
-    if (tokenErr || !tokenData?.token) {
-      return { error: { message: tokenErr?.message || 'Could not generate face token.' } }
+    const { data, error } = await supabase
+      .from('face_enrollments')
+      .select('login_token, profiles:user_id(auth_email)')
+      .eq('user_id', userId)
+      .single()
+
+    if (error || !data?.login_token) {
+      return { error: { message: 'Face login setup incomplete. Use password.' } }
     }
 
-    // Step 2 — exchange token for session (Edge Function)
-    try {
-      const resp = await fetch(`${EDGE_URL}/face-login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ token: tokenData.token, userId }),
-      })
-      const json = await resp.json()
-      if (!resp.ok || json.error) {
-        return { error: { message: json.error || 'Face session failed.' } }
-      }
-
-      // Step 3 — set the session in Supabase client
-      const { data, error } = await supabase.auth.setSession({
-        access_token:  json.access_token,
-        refresh_token: json.refresh_token,
-      })
-      return { data, error }
-    } catch (err) {
-      return { error: { message: 'Network error: ' + err.message } }
+    const email = data.profiles?.auth_email
+    if (!email) {
+      return { error: { message: 'No email found for this face. Use password.' } }
     }
+
+    return supabase.auth.signInWithPassword({
+      email,
+      password: data.login_token,
+    })
   }
 
   async function signOut() { await supabase.auth.signOut() }
