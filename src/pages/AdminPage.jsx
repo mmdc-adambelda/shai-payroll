@@ -439,12 +439,37 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
                   <span className="badge-draft text-xs">Not enrolled</span>
                 )}
                 <button
-                  onClick={() => onEnroll(emp)}
-                  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5"
-                >
-                  <Scan className="w-3 h-3" />
-                  {enrolled ? 'Re-enroll' : 'Enroll Face'}
-                </button>
+  onClick={() => onEnroll(emp)}
+  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5"
+>
+  <Scan className="w-3 h-3" />
+  {enrolled ? 'Re-enroll' : 'Enroll Face'}
+</button>
+{enrolled && (
+  <button
+    onClick={async () => {
+      const confirmed = window.confirm(`Remove Face ID for ${emp.full_name}?`)
+      if (!confirmed) return
+      const { supabase } = await import('../lib/supabase')
+      const { error } = await supabase
+        .from('face_enrollments')
+        .delete()
+        .eq('user_id', emp.id)
+      if (error) {
+        alert('Failed to remove: ' + error.message)
+      } else {
+        setEnrollments(prev => {
+          const updated = { ...prev }
+          delete updated[emp.id]
+          return updated
+        })
+      }
+    }}
+    className="text-xs text-red-400 border border-red-800/40 bg-red-900/20 hover:bg-red-900/40 transition-colors px-2.5 py-1.5 rounded-lg"
+  >
+    Remove
+  </button>
+)}
               </div>
             </div>
           )
