@@ -45,27 +45,26 @@ export function AuthProvider({ children }) {
   }
 
   // ── Face login ────────────────────────────────────────────
-  // Looks up the stored login_token from face_enrollments and signs in directly
   async function signInWithFaceToken(userId) {
+    // Get email and face_password from face_enrollments
     const { data, error } = await supabase
       .from('face_enrollments')
-      .select('login_token, profiles:user_id(auth_email)')
+      .select('face_password, profiles:user_id(auth_email)')
       .eq('user_id', userId)
       .single()
 
-    if (error || !data?.login_token) {
-      return { error: { message: 'Face login setup incomplete. Use password.' } }
+    if (error || !data) {
+      return { error: { message: 'Face data not found. Use password.' } }
     }
 
     const email = data.profiles?.auth_email
-    if (!email) {
-      return { error: { message: 'No email found for this face. Use password.' } }
+    const password = data.face_password
+
+    if (!email || !password) {
+      return { error: { message: 'Face login not configured. Use password.' } }
     }
 
-    return supabase.auth.signInWithPassword({
-      email,
-      password: data.login_token,
-    })
+    return supabase.auth.signInWithPassword({ email, password })
   }
 
   async function signOut() { await supabase.auth.signOut() }
