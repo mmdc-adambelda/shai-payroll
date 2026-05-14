@@ -394,19 +394,33 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
 
   React.useEffect(() => {
     async function fetchEnrollments() {
-      const { createClient } = await import('@supabase/supabase-js')
-      const { supabase } = await import('../lib/supabase')
-      const { data } = await supabase
-        .from('face_enrollments')
-        .select('user_id, enrolled_at, sample_count')
-      if (data) {
-        const map = {}
-        data.forEach(e => { map[e.user_id] = e })
-        setEnrollments(map)
-      }
+    const { supabase } = await import('../lib/supabase')
+    const { data } = await supabase
+      .from('face_enrollments')
+      .select('user_id, enrolled_at, sample_count')
+    if (data) {
+      const map = {}
+      data.forEach(e => { map[e.user_id] = e })
+      setEnrollments(map)
     }
-    fetchEnrollments()
-  }, [])
+  }
+
+  async function handleRemove(emp) {
+    const confirmed = window.confirm(`Remove Face ID for ${emp.full_name}?`)
+    if (!confirmed) return
+    const { supabase } = await import('../lib/supabase')
+    const { error } = await supabase
+      .from('face_enrollments')
+      .delete()
+      .eq('user_id', emp.id)
+    if (error) {
+      alert('Failed to remove: ' + error.message)
+    } else {
+      await fetchEnrollments()
+    }
+  }
+
+  React.useEffect(() => { fetchEnrollments() }, [])
 
   return (
     <div className="card overflow-hidden">
@@ -439,12 +453,19 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
                   <span className="badge-draft text-xs">Not enrolled</span>
                 )}
                 <button
-  onClick={() => onEnroll(emp)}
-  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5"
->
-  <Scan className="w-3 h-3" />
-  {enrolled ? 'Re-enroll' : 'Enroll Face'}
-</button>
+                  onClick={() => onEnroll(emp)}
+                  className="btn-secondary text-xs flex items-center gap-1.5 py-1.5"
+                >
+                  <Scan className="w-3 h-3" />
+                  {enrolled ? 'Re-enroll' : 'Enroll Face'}
+                </button>
+                {enrolled && (
+                  <button
+                    onClick={() => handleRemove(emp)}
+                    className="text-xs text-red-400 border border-red-800/40 bg-red-900/20 hover:bg-red-900/40 transition-colors px-2.5 py-1.5 rounded-lg"
+                  >
+                    Remove
+                  </button>
 {enrolled && (
   <button
     onClick={async () => {
