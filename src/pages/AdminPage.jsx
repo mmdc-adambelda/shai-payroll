@@ -209,7 +209,6 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
     if (!clockIn || !clockOut) return 0
     try {
       const rawHours = (new Date(clockOut) - new Date(clockIn)) / 3600000
-      // Deduct 1 hour unpaid lunch break for shifts of 5 hours or more
       const hours = rawHours >= 5 ? rawHours - 1 : rawHours
       return Math.max(0, parseFloat(hours.toFixed(2)))
     } catch { return 0 }
@@ -392,8 +391,7 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
 function FaceEnrollmentTable({ employees, onEnroll }) {
   const [enrollments, setEnrollments] = React.useState({})
 
-  React.useEffect(() => {
-    async function fetchEnrollments() {
+  async function fetchEnrollments() {
     const { supabase } = await import('../lib/supabase')
     const { data } = await supabase
       .from('face_enrollments')
@@ -466,35 +464,7 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
                   >
                     Remove
                   </button>
-{enrolled && (
-  <button
-    onClick={async () => {
-      const confirmed = window.confirm(`Remove Face ID for ${emp.full_name}?`)
-      if (!confirmed) return
-      const { supabase } = await import('../lib/supabase')
-      const { error } = await supabase
-        .from('face_enrollments')
-        .delete()
-        .eq('user_id', emp.id)
-
-      console.log('DELETE error:', error)   // ← add this line
-      console.log('DELETE result for user:', emp.id)  // ← and this
-      
-      if (error) {
-        alert('Failed to remove: ' + error.message)
-      } else {
-        setEnrollments(prev => {
-          const updated = { ...prev }
-          delete updated[emp.id]
-          return updated
-        })
-      }
-    }}
-    className="text-xs text-red-400 border border-red-800/40 bg-red-900/20 hover:bg-red-900/40 transition-colors px-2.5 py-1.5 rounded-lg"
-  >
-    Remove
-  </button>
-)}
+                )}
               </div>
             </div>
           )
@@ -612,7 +582,7 @@ export default function AdminPage() {
   const mainTabs = [
     { id: 'employees',  label: 'Employees',           icon: Users,    count: employees.length },
     { id: 'timesheets', label: 'Timesheet Approvals', icon: FileText, count: stats.pendingTimesheets },
-    { id: 'biometrics', label: 'Face Enrollment',       icon: Scan,     count: 0 },
+    { id: 'biometrics', label: 'Face Enrollment',     icon: Scan,     count: 0 },
   ]
 
   return (
@@ -825,7 +795,6 @@ export default function AdminPage() {
         </div>
       )}
 
-
       {/* ── BIOMETRICS / FACE ENROLLMENT TAB ── */}
       {activeTab === 'biometrics' && (
         <div className="space-y-4">
@@ -843,7 +812,6 @@ export default function AdminPage() {
           <FaceEnrollmentTable employees={employees} onEnroll={setEnrollTarget} />
         </div>
       )}
-
 
       {enrollTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -863,9 +831,11 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+
       {editUser && (
         <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={saveEmployee} />
       )}
+
       {editTimesheet && (
         <TimesheetEditModal
           timesheet={editTimesheet}
