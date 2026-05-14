@@ -156,7 +156,26 @@ export default function FaceEnrollment({ userId, onDone, onCancel }) {
       setPhase('error')
     }
   }
+async function unenrollFace() {
+  const confirm = window.confirm('Remove your enrolled Face ID? You can re-enroll anytime.')
+  if (!confirm) return
 
+  const { error } = await supabase
+    .from('face_enrollments')
+    .delete()
+    .eq('user_id', userId)
+
+  if (error) {
+    alert('Failed to remove Face ID: ' + error.message)
+  } else {
+    await supabase.from('biometric_audit_logs').insert({
+      user_id: userId,
+      action: 'face_unenrolled',
+      metadata: { reason: 'user_requested' },
+    })
+    onDone()
+  }
+}
   function reset() {
     cleanup()
     setCaptured([]); setAngleIdx(0); setError(''); setLiveness(null); setFaceDetected(false)
@@ -197,12 +216,21 @@ export default function FaceEnrollment({ userId, onDone, onCancel }) {
         )}
 
         {phase === 'done' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-emerald-950/90 gap-3">
-            <CheckCircle2 className="w-14 h-14 text-emerald-400" />
-            <p className="text-white font-bold text-lg">Enrollment Complete!</p>
-            <p className="text-emerald-300 text-sm">Your face has been registered.</p>
-          </div>
-        )}
+  <div className="flex flex-col gap-2">
+    <div className="flex gap-3">
+      <button onClick={onDone} className="btn-primary flex-1">Done</button>
+      <button onClick={reset} className="btn-secondary flex-1 flex items-center justify-center gap-2">
+        <RotateCcw className="w-3.5 h-3.5" /> Re-enroll
+      </button>
+    </div>
+    <button
+      onClick={unenrollFace}
+      className="w-full py-2 rounded-xl text-sm font-medium text-red-400 border border-red-800/40 bg-red-900/20 hover:bg-red-900/40 transition-colors"
+    >
+      Remove Face ID
+    </button>
+  </div>
+)}
 
         {phase === 'error' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/90 gap-3 p-4">
