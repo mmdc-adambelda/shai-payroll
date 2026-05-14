@@ -455,6 +455,10 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
         .from('face_enrollments')
         .delete()
         .eq('user_id', emp.id)
+
+      console.log('DELETE error:', error)   // ← add this line
+      console.log('DELETE result for user:', emp.id)  // ← and this
+      
       if (error) {
         alert('Failed to remove: ' + error.message)
       } else {
