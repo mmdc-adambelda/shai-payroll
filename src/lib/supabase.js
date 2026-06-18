@@ -31,3 +31,23 @@ export const CUTOFF_PERIODS = [
   { label: '1st Cut-off (1–15)', start: 1, end: 15 },
   { label: '2nd Cut-off (16–End)', start: 16, end: 31 },
 ]
+
+export const HOLIDAY_TYPES = {
+  REGULAR:          'REGULAR',
+  SPECIAL:          'SPECIAL',
+  SPECIAL_WORKING:  'SPECIAL_WORKING',
+}
+
+export const HOLIDAY_TYPE_LABELS = {
+  REGULAR:         'Regular Holiday',
+  SPECIAL:         'Special Non-Working',
+  SPECIAL_WORKING: 'Special Working',
+}
+
+export const EMPLOYMENT_STATUS = {
+  ACTIVE:     'active',
+  SUSPENDED:  'suspended',
+  TERMINATED: 'terminated',
+  RESIGNED:   'resigned',
+  AWOL:       'awol',
+}

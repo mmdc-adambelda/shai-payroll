@@ -1,22 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { ROLES } from '../../lib/supabase'
+import { supabase, ROLES } from '../../lib/supabase'
 import {
   LayoutDashboard, Clock, FileText, Calendar, Timer, DollarSign,
   Settings, LogOut, Menu, X, ChevronRight, KeyRound, Eye, EyeOff,
-  CreditCard, Scan,
+  CreditCard, Scan, CalendarDays,
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/',         label: 'Dashboard',     icon: LayoutDashboard, exact: true,              roles: 'all' },
-  { to: '/attendance',label: 'Attendance',   icon: Clock,                                      roles: 'all' },
-  { to: '/timesheet', label: 'Timesheet',    icon: FileText,                                   roles: 'all' },
-  { to: '/leave',     label: 'Leave',        icon: Calendar,                                   roles: 'all' },
-  { to: '/overtime',  label: 'Overtime',     icon: Timer,                                      roles: 'all' },
-  { to: '/payslips',  label: 'My Payslips',  icon: CreditCard,                                 roles: 'all' },
-  { to: '/payroll',   label: 'Payroll',      icon: DollarSign, roles: [ROLES.SUPER_ADMIN, ROLES.MANAGER] },
-  { to: '/admin',     label: 'Admin',        icon: Settings,   roles: [ROLES.SUPER_ADMIN] },
+  { to: '/',          label: 'Dashboard',     icon: LayoutDashboard, exact: true,              roles: 'all' },
+  { to: '/attendance', label: 'Attendance',   icon: Clock,                                      roles: 'all' },
+  { to: '/timesheet',  label: 'Timesheet',    icon: FileText,                                   roles: 'all' },
+  { to: '/leave',      label: 'Leave',        icon: Calendar,                                   roles: 'all' },
+  { to: '/overtime',   label: 'Overtime',     icon: Timer,                                      roles: 'all' },
+  { to: '/payslips',   label: 'My Payslips',  icon: CreditCard,                                 roles: 'all' },
+  { to: '/payroll',    label: 'Payroll',      icon: DollarSign,  roles: [ROLES.SUPER_ADMIN, ROLES.MANAGER] },
+  { to: '/holidays',   label: 'Holidays',     icon: CalendarDays,roles: [ROLES.SUPER_ADMIN] },
+  { to: '/admin',      label: 'Admin',        icon: Settings,    roles: [ROLES.SUPER_ADMIN] },
 ]
 
 function RoleBadge({ role }) {
@@ -29,8 +30,8 @@ function RoleBadge({ role }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${r.cls}`}>{r.label}</span>
 }
 
-function ChangePasswordModal({ onClose }) {
-  const { changePassword } = useAuth()
+function ChangePasswordModal({ onClose, forceChange = false }) {
+  const { changePassword, fetchProfile, user } = useAuth()
   const [form, setForm]     = useState({ current: '', newPass: '', confirm: '' })
   const [show, setShow]     = useState({ current: false, newPass: false, confirm: false })
   const [loading, setLoading] = useState(false)
@@ -59,30 +60,45 @@ function ChangePasswordModal({ onClose }) {
     if (pw.score < 2) { setError('Password is too weak.'); return }
     setLoading(true)
     const { error } = await changePassword(form.newPass)
-    if (error) setError(error.message)
-    else setSuccess(true)
+    if (error) { setError(error.message); setLoading(false); return }
+
+    // Clear force_password_change flag if set
+    if (user) {
+      await supabase.from('profiles')
+        .update({ force_password_change: false })
+        .eq('id', user.id)
+      await fetchProfile(user.id)
+    }
     setLoading(false)
+    setSuccess(true)
   }
 
   if (success) return (
-    <ModalWrap onClose={onClose}>
+    <ModalWrap onClose={forceChange ? null : onClose}>
       <div className="text-center py-4">
         <div className="w-12 h-12 rounded-full bg-emerald-900/40 border border-emerald-700/40 flex items-center justify-center mx-auto mb-3">
           <KeyRound className="w-6 h-6 text-emerald-400" />
         </div>
         <p className="text-white font-medium">Password updated!</p>
-        <button onClick={onClose} className="btn-primary mt-4 px-8">Done</button>
+        <button onClick={onClose} className="btn-primary mt-4 px-8">Continue</button>
       </div>
     </ModalWrap>
   )
 
   return (
-    <ModalWrap onClose={onClose}>
-      <h3 className="font-display font-bold text-white mb-5">Change Password</h3>
+    <ModalWrap onClose={forceChange ? null : onClose}>
+      <h3 className="font-display font-bold text-white mb-1">
+        {forceChange ? 'Set New Password' : 'Change Password'}
+      </h3>
+      {forceChange && (
+        <div className="mb-4 p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 text-amber-300 text-xs">
+          Your password has been reset by an administrator. Please set a new password to continue.
+        </div>
+      )}
       {error && <div className="mb-4 p-3 rounded-xl bg-red-900/30 border border-red-800/40 text-red-300 text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-4">
         {[
-          { key: 'current', label: 'Current Password' },
+          { key: 'current', label: forceChange ? 'Temporary Password' : 'Current Password' },
           { key: 'newPass', label: 'New Password' },
           { key: 'confirm', label: 'Confirm New Password' },
         ].map(({ key, label }) => (
@@ -121,7 +137,9 @@ function ModalWrap({ onClose, children }) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="card w-full max-w-sm p-6 animate-in">
         <div className="flex justify-end mb-1">
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+          {onClose && (
+            <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+          )}
         </div>
         {children}
       </div>
@@ -134,6 +152,12 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showPwModal, setShowPwModal] = useState(false)
+
+  // Force password change gate: show modal if flag is set
+  const forcePasswordChange = profile?.force_password_change === true
+  useEffect(() => {
+    if (forcePasswordChange) setShowPwModal(true)
+  }, [forcePasswordChange])
 
   const visibleNav = navItems.filter(item =>
     item.roles === 'all' || (profile && item.roles.includes(profile.role))
@@ -228,7 +252,12 @@ export default function DashboardLayout() {
         <main className="flex-1 p-4 lg:p-6"><Outlet /></main>
       </div>
 
-      {showPwModal && <ChangePasswordModal onClose={() => setShowPwModal(false)} />}
+      {showPwModal && (
+        <ChangePasswordModal
+          forceChange={forcePasswordChange}
+          onClose={() => { if (!forcePasswordChange) setShowPwModal(false) }}
+        />
+      )}
     </div>
   )
 }

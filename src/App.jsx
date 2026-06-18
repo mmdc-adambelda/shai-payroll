@@ -10,6 +10,7 @@ import OvertimePage from './pages/OvertimePage'
 import PayrollPage from './pages/PayrollPage'
 import AdminPage from './pages/AdminPage'
 import MyPayslipsPage from './pages/MyPayslipsPage'
+import HolidaysPage from './pages/HolidaysPage'
 import { ROLES } from './lib/supabase'
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -58,6 +59,11 @@ function AppRoutes() {
         <Route path="admin" element={
           <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]}>
             <AdminPage />
+          </ProtectedRoute>
+        } />
+        <Route path="holidays" element={
+          <ProtectedRoute allowedRoles={[ROLES.SUPER_ADMIN]}>
+            <HolidaysPage />
           </ProtectedRoute>
         } />
       </Route>

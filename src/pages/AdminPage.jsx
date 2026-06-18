@@ -1,10 +1,17 @@
 import React from 'react'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
-import { supabase, ROLES, DEPARTMENTS, STATUS } from '../lib/supabase'
+import { supabase, ROLES, DEPARTMENTS, STATUS, EMPLOYMENT_STATUS } from '../lib/supabase'
+import { passwordStrength, generateTempPassword } from '../lib/holidayEngine'
 import { format, parseISO } from 'date-fns'
-import { Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText, Pencil, Save, Clock, Trash2, AlertTriangle, Scan, Shield } from 'lucide-react'
+import {
+  Users, Settings, CheckCircle, XCircle, RefreshCw, CreditCard, FileText,
+  Pencil, Save, Clock, Trash2, AlertTriangle, Scan, Shield, KeyRound,
+  Eye, EyeOff, ToggleLeft, ToggleRight, SlidersHorizontal, Copy,
+} from 'lucide-react'
 import FaceEnrollment from '../components/face/FaceEnrollment'
+
+const EDGE_URL = import.meta.env.VITE_SUPABASE_EDGE_URL || ''
 
 // ─── Helpers ───────────────────────────────────────────────
 function RoleBadge({ role }) {
@@ -31,17 +38,209 @@ function StatusBadge({ status }) {
   return map[status] || <span className="badge-draft">{status}</span>
 }
 
+// ─── Password Reset Modal ───────────────────────────────────
+function ResetPasswordModal({ user, adminProfile, onClose }) {
+  const [mode, setMode]         = useState('auto')   // 'auto' | 'manual'
+  const [tempPw, setTempPw]     = useState(generateTempPassword())
+  const [manualPw, setManualPw] = useState('')
+  const [show, setShow]         = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [success, setSuccess]   = useState(false)
+  const [error, setError]       = useState('')
+  const [copied, setCopied]     = useState(false)
+
+  const finalPassword = mode === 'auto' ? tempPw : manualPw
+  const pw = passwordStrength(finalPassword)
+
+  async function handleReset() {
+    setError('')
+    if (!finalPassword || finalPassword.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (mode === 'manual' && pw.score < 2) {
+      setError('Password is too weak. Add uppercase, numbers, or symbols.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const resp = await fetch(`${EDGE_URL}/admin-reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          target_user_id: user.id,
+          new_password:   finalPassword,
+          admin_user_id:  adminProfile.id,
+        }),
+      })
+      const json = await resp.json()
+      if (!resp.ok || json.error) throw new Error(json.error || 'Reset failed.')
+
+      // Log the reset action in admin_audit_logs
+      await supabase.from('admin_audit_logs').insert({
+        admin_user_id:  adminProfile.id,
+        target_user_id: user.id,
+        action:         'password_reset',
+        metadata:       { method: mode, target_name: user.full_name },
+      })
+
+      setSuccess(true)
+    } catch (err) {
+      setError(err.message)
+    }
+    setLoading(false)
+  }
+
+  function copyPassword() {
+    navigator.clipboard.writeText(finalPassword)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  if (success) return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-sm p-6 animate-in text-center">
+        <div className="w-12 h-12 rounded-full bg-emerald-900/40 border border-emerald-700/40 flex items-center justify-center mx-auto mb-3">
+          <KeyRound className="w-6 h-6 text-emerald-400" />
+        </div>
+        <p className="text-white font-medium mb-1">Password Reset!</p>
+        <p className="text-slate-400 text-sm mb-1">
+          Password for <span className="text-white">{user.full_name}</span> has been updated.
+        </p>
+        <p className="text-slate-400 text-sm mb-4">
+          The user will be prompted to change their password on next login.
+        </p>
+        {mode === 'auto' && (
+          <div className="mb-4 p-3 rounded-xl bg-slate-800/60 border border-slate-700/40 text-left">
+            <div className="text-xs text-slate-400 mb-1">Temporary Password</div>
+            <div className="flex items-center gap-2">
+              <code className="text-emerald-400 font-mono text-sm flex-1 break-all">{tempPw}</code>
+              <button onClick={copyPassword} className="text-slate-400 hover:text-white flex-shrink-0">
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            {copied && <div className="text-xs text-emerald-400 mt-1">Copied!</div>}
+          </div>
+        )}
+        <button onClick={onClose} className="btn-primary px-8">Done</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="card w-full max-w-md p-6 animate-in">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-display font-bold text-white">Reset Password</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{user.full_name}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><KeyRound className="w-4 h-4" /></button>
+        </div>
+
+        <div className="p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 text-xs text-amber-300 mb-5 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>This action is logged. The employee will be required to change their password on next login.</span>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-900/30 border border-red-800/40 text-red-300 text-sm">{error}</div>
+        )}
+
+        {/* Mode selector */}
+        <div className="flex gap-1 p-1 bg-slate-900 rounded-xl mb-5">
+          {[{ id: 'auto', label: 'Auto-generate' }, { id: 'manual', label: 'Set manually' }].map(t => (
+            <button key={t.id} onClick={() => setMode(t.id)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                mode === t.id ? 'bg-brand-600/30 text-brand-300 border border-brand-600/30' : 'text-slate-400 hover:text-slate-200'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'auto' ? (
+          <div>
+            <label className="label">Generated Password</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 input font-mono text-emerald-400 text-sm">{tempPw}</code>
+              <button onClick={() => setTempPw(generateTempPassword())}
+                className="btn-secondary px-3 text-xs flex items-center gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5" /> New
+              </button>
+              <button onClick={copyPassword}
+                className="btn-secondary px-3 text-xs flex items-center gap-1.5">
+                <Copy className="w-3.5 h-3.5" /> {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Share this password with the employee through a secure channel.</p>
+          </div>
+        ) : (
+          <div>
+            <label className="label">New Password</label>
+            <div className="relative">
+              <input type={show ? 'text' : 'password'} className="input pr-10"
+                value={manualPw}
+                onChange={e => setManualPw(e.target.value)}
+                placeholder="Enter new password" />
+              <button type="button" onClick={() => setShow(!show)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {manualPw && (
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="flex gap-1 flex-1">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className={`h-1 flex-1 rounded-full transition-all ${i <= pw.score ? pw.color : 'bg-slate-700'}`} />
+                  ))}
+                </div>
+                <span className="text-xs text-slate-400">{pw.label}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!confirmOpen ? (
+          <button onClick={() => setConfirmOpen(true)} className="btn-primary w-full mt-5">
+            Reset Password
+          </button>
+        ) : (
+          <div className="mt-5 space-y-3">
+            <div className="p-3 rounded-xl bg-red-900/20 border border-red-800/30 text-xs text-red-300 text-center">
+              Confirm: reset password for <strong>{user.full_name}</strong>?
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmOpen(false)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleReset} disabled={loading} className="btn-danger flex-1">
+                {loading ? 'Resetting...' : 'Yes, Reset It'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Employee Edit Modal ────────────────────────────────────
-function EditUserModal({ user, onClose, onSave }) {
+function EditUserModal({ user, onClose, onSave, onResetPassword }) {
   const [tab, setTab] = useState('info')
   const [form, setForm] = useState({
-    full_name:   user.full_name   || '',
-    role:        user.role        || ROLES.STAFF,
-    department:  user.department  || DEPARTMENTS.ADMIN,
-    employee_id: user.employee_id || '',
-    daily_rate:  user.daily_rate  || '',
-    position:    user.position    || '',
-    phone:       user.phone       || '',
+    full_name:          user.full_name          || '',
+    role:               user.role               || ROLES.STAFF,
+    department:         user.department         || DEPARTMENTS.ADMIN,
+    employee_id:        user.employee_id        || '',
+    daily_rate:         user.daily_rate         || '',
+    position:           user.position           || '',
+    phone:              user.phone              || '',
+    employment_status:  user.employment_status  || EMPLOYMENT_STATUS.ACTIVE,
   })
   const [credits, setCredits] = useState({
     leave_sick:      user.leave_sick      ?? 15,
@@ -58,6 +257,14 @@ function EditUserModal({ user, onClose, onSave }) {
     onClose()
   }
 
+  const EMPLOYMENT_STATUS_OPTIONS = [
+    { value: 'active',     label: 'Active' },
+    { value: 'suspended',  label: 'Suspended' },
+    { value: 'terminated', label: 'Terminated' },
+    { value: 'resigned',   label: 'Resigned' },
+    { value: 'awol',       label: 'AWOL' },
+  ]
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="card w-full max-w-md p-6 animate-in">
@@ -69,10 +276,16 @@ function EditUserModal({ user, onClose, onSave }) {
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
         </div>
 
-        <div className="flex gap-1 p-1 bg-slate-900 rounded-xl mb-5">
-          {[{ id: 'info', label: 'Info & Role' }, { id: 'credits', label: 'Leave Credits' }].map(t => (
+        <div className="flex gap-1 p-1 bg-slate-900 rounded-xl mb-5 overflow-x-auto">
+          {[
+            { id: 'info',    label: 'Info & Role' },
+            { id: 'credits', label: 'Leave Credits' },
+            { id: 'security',label: 'Security' },
+          ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t.id ? 'bg-brand-600/30 text-brand-300 border border-brand-600/30' : 'text-slate-400 hover:text-slate-200'}`}>
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                tab === t.id ? 'bg-brand-600/30 text-brand-300 border border-brand-600/30' : 'text-slate-400 hover:text-slate-200'
+              }`}>
               {t.label}
             </button>
           ))}
@@ -120,6 +333,17 @@ function EditUserModal({ user, onClose, onSave }) {
                 <input className="input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="+63..." />
               </div>
             </div>
+            <div>
+              <label className="label">Employment Status</label>
+              <select className="input" value={form.employment_status} onChange={e => setForm({ ...form, employment_status: e.target.value })}>
+                {EMPLOYMENT_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            {form.employment_status !== 'active' && (
+              <div className="p-3 rounded-xl bg-amber-900/20 border border-amber-800/30 text-xs text-amber-300">
+                ⚠ Non-active employees will NOT receive automatic holiday pay credits.
+              </div>
+            )}
           </div>
         )}
 
@@ -158,6 +382,21 @@ function EditUserModal({ user, onClose, onSave }) {
                   {credits.leave_sick + credits.leave_vacation + credits.leave_emergency + credits.leave_maternity} days
                 </span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'security' && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Reset this employee's password. They will be required to set a new password on their next login.
+            </p>
+            <button onClick={onResetPassword}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-amber-900/20 hover:bg-amber-900/30 text-amber-300 border border-amber-800/40 text-sm font-medium transition-all">
+              <KeyRound className="w-4 h-4" /> Reset Password
+            </button>
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/40 text-xs text-slate-500">
+              Password resets are logged in the system audit trail with your admin ID, the target user, and timestamp.
             </div>
           </div>
         )}
@@ -318,7 +557,6 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
                       <td className="px-4 py-3 font-mono text-xs text-slate-300 whitespace-nowrap">
                         {format(new Date(r.date + 'T00:00:00'), 'EEE, MMM d')}
                       </td>
-
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <input type="time" className="input py-1 px-2 text-xs w-28"
@@ -330,7 +568,6 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
                           </span>
                         )}
                       </td>
-
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <input type="time" className="input py-1 px-2 text-xs w-28"
@@ -342,10 +579,8 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
                           </span>
                         )}
                       </td>
-
                       <td className="px-4 py-3 font-mono text-emerald-400 text-xs">{regular.toFixed(1)}h</td>
                       <td className="px-4 py-3 font-mono text-amber-400 text-xs">{ot > 0 ? `+${ot.toFixed(1)}h` : '—'}</td>
-
                       <td className="px-4 py-3">
                         {isEditing ? (
                           <div className="flex gap-1.5">
@@ -385,7 +620,109 @@ function TimesheetEditModal({ timesheet, onClose, onSaved }) {
   )
 }
 
-// ─── Main AdminPage ─────────────────────────────────────────
+// ─── Payroll Settings Panel ─────────────────────────────────
+function PayrollSettingsPanel() {
+  const { profile } = useAuth()
+  const [settings, setSettings] = useState(null)
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
+
+  useEffect(() => { fetchSettings() }, [])
+
+  async function fetchSettings() {
+    setLoading(true)
+    const { data } = await supabase.from('payroll_settings').select('*').limit(1).single()
+    setSettings(data)
+    setLoading(false)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    await supabase.from('payroll_settings')
+      .update({
+        default_daily_hours:            settings.default_daily_hours,
+        special_holiday_paid_if_absent: settings.special_holiday_paid_if_absent,
+        auto_credit_regular_holiday:    settings.auto_credit_regular_holiday,
+        enable_holiday_ot_rules:        settings.enable_holiday_ot_rules,
+        updated_by:                     profile.id,
+        updated_at:                     new Date().toISOString(),
+      })
+      .eq('id', settings.id)
+    setSaving(false)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (loading) return <div className="py-12 text-center text-slate-500">Loading settings...</div>
+  if (!settings) return <div className="py-12 text-center text-slate-500">No settings found. Run schema v3.</div>
+
+  const toggleSetting = key => setSettings(s => ({ ...s, [key]: !s[key] }))
+
+  const boolSettings = [
+    {
+      key:   'auto_credit_regular_holiday',
+      label: 'Auto-credit Regular Holidays',
+      desc:  'Automatically credit 8 paid hours to employees who are scheduled but did not clock in on a Regular Holiday (excludes AWOL, suspended, terminated, resigned).',
+    },
+    {
+      key:   'special_holiday_paid_if_absent',
+      label: 'Pay Special Holiday if Absent',
+      desc:  'Grant full-day pay to employees absent on a Special Non-Working Holiday. Default: no pay if absent.',
+    },
+    {
+      key:   'enable_holiday_ot_rules',
+      label: 'Enable Holiday OT Multipliers',
+      desc:  'Apply DOLE-mandated OT multipliers on holidays (260%/338% regular, 169%/195% special). Disable to use flat holiday rate + standard 125% OT.',
+    },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <div className="card p-5">
+        <h3 className="font-display font-bold text-white mb-1 flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4 text-brand-400" /> General
+        </h3>
+        <p className="text-slate-400 text-xs mb-4">Core payroll computation parameters.</p>
+        <div className="max-w-xs">
+          <label className="label">Default Daily Hours</label>
+          <input type="number" min="1" max="24" className="input"
+            value={settings.default_daily_hours}
+            onChange={e => setSettings({ ...settings, default_daily_hours: parseInt(e.target.value) || 8 })} />
+          <p className="text-xs text-slate-500 mt-1">Standard shift length used as the divisor for hourly rate (daily_rate ÷ this value).</p>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <h3 className="font-display font-bold text-white mb-1 flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4 text-brand-400" /> Holiday Rules
+        </h3>
+        <p className="text-slate-400 text-xs mb-4">Controls how holiday pay is computed during payroll processing.</p>
+        <div className="space-y-4">
+          {boolSettings.map(({ key, label, desc }) => (
+            <div key={key} className="flex items-start gap-4 p-4 rounded-xl bg-slate-800/40 border border-slate-700/40">
+              <button onClick={() => toggleSetting(key)} className="mt-0.5 flex-shrink-0">
+                {settings[key]
+                  ? <ToggleRight className="w-7 h-7 text-emerald-400" />
+                  : <ToggleLeft  className="w-7 h-7 text-slate-600" />}
+              </button>
+              <div>
+                <div className="text-sm font-medium text-white">{label}</div>
+                <div className="text-xs text-slate-400 mt-0.5 leading-relaxed">{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={handleSave} disabled={saving}
+        className="btn-primary flex items-center gap-2">
+        <Save className="w-4 h-4" />
+        {saving ? 'Saving...' : saved ? '✓ Saved' : 'Save Settings'}
+      </button>
+    </div>
+  )
+}
 
 // ── Face Enrollment Table ────────────────────────────────────
 function FaceEnrollmentTable({ employees, onEnroll }) {
@@ -474,12 +811,14 @@ function FaceEnrollmentTable({ employees, onEnroll }) {
   )
 }
 
+// ─── Main AdminPage ─────────────────────────────────────────
 export default function AdminPage() {
   const { profile } = useAuth()
   const [activeTab, setActiveTab]         = useState('employees')
   const [employees, setEmployees]         = useState([])
   const [loading, setLoading]             = useState(true)
   const [editUser, setEditUser]           = useState(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState(null)
   const [editTimesheet, setEditTimesheet]   = useState(null)
   const [deleteTarget, setDeleteTarget]     = useState(null)
   const [deleting, setDeleting]             = useState(false)
@@ -580,16 +919,17 @@ export default function AdminPage() {
   }, {})
 
   const mainTabs = [
-    { id: 'employees',  label: 'Employees',           icon: Users,    count: employees.length },
-    { id: 'timesheets', label: 'Timesheet Approvals', icon: FileText, count: stats.pendingTimesheets },
-    { id: 'biometrics', label: 'Face Enrollment',     icon: Scan,     count: 0 },
+    { id: 'employees',  label: 'Employees',           icon: Users,              count: employees.length },
+    { id: 'timesheets', label: 'Timesheet Approvals', icon: FileText,           count: stats.pendingTimesheets },
+    { id: 'biometrics', label: 'Face Enrollment',     icon: Scan,               count: 0 },
+    { id: 'settings',   label: 'Payroll Settings',    icon: SlidersHorizontal,  count: 0 },
   ]
 
   return (
     <div className="space-y-6 animate-in">
       <div>
         <h1 className="section-title">System Administration</h1>
-        <p className="text-slate-400 text-sm mt-0.5">Manage employees, roles, leave credits, and timesheet approvals</p>
+        <p className="text-slate-400 text-sm mt-0.5">Manage employees, roles, leave credits, timesheet approvals, and payroll settings</p>
       </div>
 
       {/* Stats */}
@@ -608,10 +948,10 @@ export default function AdminPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800/40 w-fit">
+      <div className="flex gap-1 p-1 bg-slate-900/60 rounded-xl border border-slate-800/40 w-fit overflow-x-auto">
         {mainTabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === t.id
                 ? 'bg-brand-600/20 text-brand-300 border border-brand-600/30'
                 : 'text-slate-400 hover:text-slate-200'
@@ -652,6 +992,13 @@ export default function AdminPage() {
                 <div className="divide-y divide-slate-800/60">
                   {emps.map(emp => {
                     const totalCredits = (emp.leave_sick ?? 15) + (emp.leave_vacation ?? 15) + (emp.leave_emergency ?? 3) + (emp.leave_maternity ?? 60)
+                    const statusColor = {
+                      active:     'text-emerald-400',
+                      suspended:  'text-amber-400',
+                      terminated: 'text-red-400',
+                      resigned:   'text-slate-400',
+                      awol:       'text-red-500',
+                    }[emp.employment_status || 'active'] || 'text-slate-400'
                     return (
                       <div key={emp.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-slate-800/20 transition-colors flex-wrap gap-3">
                         <div className="flex items-center gap-3">
@@ -666,6 +1013,8 @@ export default function AdminPage() {
                               {emp.daily_rate > 0 && <><span>·</span><span className="text-brand-400">₱{emp.daily_rate}/day</span></>}
                               <span>·</span>
                               <span className="text-emerald-400">{totalCredits} leave days</span>
+                              <span>·</span>
+                              <span className={`capitalize font-medium ${statusColor}`}>{emp.employment_status || 'active'}</span>
                             </div>
                           </div>
                         </div>
@@ -808,11 +1157,14 @@ export default function AdminPage() {
               Select an employee below and click <strong className="text-white">Enroll Face</strong> — the process captures 3 angles and takes about 30 seconds.
             </p>
           </div>
-
           <FaceEnrollmentTable employees={employees} onEnroll={setEnrollTarget} />
         </div>
       )}
 
+      {/* ── PAYROLL SETTINGS TAB ── */}
+      {activeTab === 'settings' && <PayrollSettingsPanel />}
+
+      {/* ── Modals ── */}
       {enrollTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="card w-full max-w-md p-6 animate-in">
@@ -833,7 +1185,20 @@ export default function AdminPage() {
       )}
 
       {editUser && (
-        <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSave={saveEmployee} />
+        <EditUserModal
+          user={editUser}
+          onClose={() => setEditUser(null)}
+          onSave={saveEmployee}
+          onResetPassword={() => { setResetPasswordUser(editUser); setEditUser(null) }}
+        />
+      )}
+
+      {resetPasswordUser && (
+        <ResetPasswordModal
+          user={resetPasswordUser}
+          adminProfile={profile}
+          onClose={() => setResetPasswordUser(null)}
+        />
       )}
 
       {editTimesheet && (
@@ -844,7 +1209,6 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Delete confirmation modal */}
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="card w-full max-w-sm p-6 animate-in">
